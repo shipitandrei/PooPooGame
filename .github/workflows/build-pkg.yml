@@ -1,0 +1,127 @@
+name: Build Poo Poo PS4 PKG
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Poo Poo PS4 PKG
+    runs-on: ubuntu-22.04
+
+    env:
+      OO_PS4_TOOLCHAIN: ${{ github.workspace }}/OpenOrbis/PS4Toolchain
+
+    steps:
+      - name: Checkout PooPooGame
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            ca-certificates \
+            curl \
+            wget \
+            make \
+            tar \
+            unzip \
+            xz-utils \
+            lsb-release \
+            software-properties-common
+
+      - name: Install LLVM 18
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+
+          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
+
+          clang-18 --version
+          clang++-18 --version
+          ld.lld-18 --version
+
+      - name: Install libssl1.1 for PkgTool.Core
+        run: |
+          wget -q \
+            https://snapshot.debian.org/archive/debian/20230610T000000Z/pool/main/o/openssl/libssl1.1_1.1.1u-1%7Edeb11u1_amd64.deb \
+            -O /tmp/libssl1.1.deb
+
+          sudo dpkg -i /tmp/libssl1.1.deb
+
+          ldconfig
+
+      - name: Download OpenOrbis v0.5.4
+        run: |
+          curl -fL \
+            https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
+            -o /tmp/toolchain-llvm-18.tar.gz
+
+      - name: Extract OpenOrbis toolchain
+        run: |
+          tar -xzf /tmp/toolchain-llvm-18.tar.gz \
+            -C "$GITHUB_WORKSPACE"
+
+          test -f "$OO_PS4_TOOLCHAIN/link.x"
+          test -f "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core"
+          test -f "$OO_PS4_TOOLCHAIN/bin/linux/create-gp4"
+          test -f "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
+
+          chmod +x "$OO_PS4_TOOLCHAIN"/bin/linux/*
+
+          echo "OpenOrbis toolchain:"
+          ls -la "$OO_PS4_TOOLCHAIN"
+
+      - name: Verify build environment
+        run: |
+          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN"
+
+          command -v clang
+          command -v clang++
+          command -v ld.lld
+
+          clang --version
+          clang++ --version
+          ld.lld --version
+
+          "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core" --help || true
+
+      - name: Show project files
+        run: |
+          echo "Project:"
+          find . -maxdepth 3 -type f \
+            ! -path './.git/*' \
+            | sort
+
+      - name: Build PKG
+        run: |
+          make clean || true
+          make
+
+      - name: Verify PKG
+        run: |
+          echo "Generated files:"
+          find . -maxdepth 3 -type f \
+            \( -name "*.pkg" -o -name "*.gp4" -o -name "eboot.bin" \) \
+            -print
+
+          PKG="$(find . -maxdepth 1 -type f -name '*.pkg' -print -quit)"
+
+          if [ -z "$PKG" ]; then
+            echo "ERROR: No PKG was produced."
+            exit 1
+          fi
+
+          echo "PKG successfully produced:"
+          ls -lh "$PKG"
+
+      - name: Upload PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: PooPooGame-PS4-PKG
+          path: "*.pkg"
+          if-no-files-found: error
