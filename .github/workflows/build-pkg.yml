@@ -1,23 +1,84 @@
-name: Build Poo Poo PS4 PKG
+name: Build PS4 PKG
 
 on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
   workflow_dispatch:
+
+env:
+  # Toolchain release tag from https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases
+  OO_TOOLCHAIN_VERSION: v0.5.4
+  OO_PS4_TOOLCHAIN: /lib/OpenOrbisSDK
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The toolchain's PkgTool.Core needs libssl1.1 + libicu66, which only exist on
+    # Ubuntu 20.04. This mirrors the official OpenOrbis Dockerfile.
+    container:
+      image: ubuntu:20.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    defaults:
+      run:
+        shell: bash
+
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential git ca-certificates curl tar gzip \
+            clang-12 lld-12 llvm-12 libicu66 libssl1.1
+          # The Makefile calls unversioned clang / clang++ / ld.lld
+          ln -sf /usr/bin/clang-12   /usr/local/bin/clang
+          ln -sf /usr/bin/clang++-12 /usr/local/bin/clang++
+          ln -sf /usr/bin/ld.lld-12  /usr/local/bin/ld.lld
 
-      - name: Run Open Orbis Toolchain
-        uses: OpenOrbis/toolchain-action@main
-        with:
-          version: latest
-          command: cd hello_world; make; PkgTool.Core pkg_build pkg/pkg.gp4 .
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+      - name: Download OpenOrbis toolchain
+        run: |
+          mkdir -p "$OO_PS4_TOOLCHAIN"
+          curl -fsSL "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/${OO_TOOLCHAIN_VERSION}/${OO_TOOLCHAIN_VERSION}.tar.gz" \
+            | tar -xz -C "$OO_PS4_TOOLCHAIN" bin/data bin/linux include lib scripts LICENSE link.x
+          echo "$OO_PS4_TOOLCHAIN/bin/linux" >> "$GITHUB_PATH"
+          test -x "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core"
+          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-gp4"
+          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
+
+      - name: Check required project files
+        run: |
+          missing=0
+          for f in Makefile hello_world sce_sys/icon0.png sce_sys/about/right.sprx sce_module; do
+            if [ ! -e "$f" ]; then echo "::error::Missing $f"; missing=1; fi
+          done
+          ls -R sce_sys sce_module hello_world || true
+          exit $missing
+
+      - name: Build eboot.bin and PKG
+        run: |
+          # The Makefile derives its source dir from the checkout folder name, but
+          # the sources live in ./hello_world, so pass PROJDIR explicitly.
+          rm -f sce_sys/param.sfo pkg.gp4 eboot.bin ./*.pkg
+          make PROJDIR=hello_world
+
+      - name: Verify PKG
+        run: |
+          pkg=$(ls ./*.pkg | head -n1)
+          ls -lh "$pkg" eboot.bin
+          test -s "$pkg"
+          # PS4 PKG magic is 0x7F 'C' 'N' 'T'
+          test "$(head -c4 "$pkg" | od -An -tx1 | tr -d ' \n')" = "7f434e54"
+
+      - name: Upload PKG
+        uses: actions/upload-artifact@v4
         with:
-          name: IV0000-BREW00083_00-HELLOWORLD000000.pkg
-          path: hello_world/IV0000-BREW00083_00-HELLOWORLD000000.pkg
+          name: PooPooGame-pkg
+          path: |
+            *.pkg
+            eboot.bin
+          if-no-files-found: error
