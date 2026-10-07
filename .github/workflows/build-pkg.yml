@@ -2,98 +2,37 @@ name: Build Poo Poo PS4 PKG
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
     name: Build Poo Poo PS4 PKG
-    runs-on: ubuntu-22.04
-
-    env:
-      OO_PS4_TOOLCHAIN: ${{ github.workspace }}/OpenOrbis/PS4Toolchain
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout PooPooGame
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Build PKG with OpenOrbis
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang lld make curl wget tar unzip ca-certificates
-
-      - name: Install libssl1.1 for PkgTool.Core
-        run: |
-          wget -q \
-            https://deb.debian.org/debian/pool/main/o/openssl/libssl1.1_1.1.1w-0+deb11u1_amd64.deb \
-            -O /tmp/libssl1.1.deb
-
-          sudo dpkg -i /tmp/libssl1.1.deb
-          sudo ldconfig
-
-          dpkg -s libssl1.1
-
-      - name: Download OpenOrbis v0.5.4
-        run: |
-          wget -q \
-            https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
-            -O /tmp/toolchain-llvm-18.tar.gz
-
-      - name: Extract OpenOrbis toolchain
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/OpenOrbis"
-
-          tar -xzf /tmp/toolchain-llvm-18.tar.gz \
-            -C "$GITHUB_WORKSPACE"
-
-          test -f "$OO_PS4_TOOLCHAIN/link.x"
-          test -f "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core"
-          test -f "$OO_PS4_TOOLCHAIN/bin/linux/create-gp4"
-          test -f "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
-
-          chmod +x "$OO_PS4_TOOLCHAIN/bin/linux/"*
-
-      - name: Prepare OpenOrbis common files
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/../_common"
-
-          cp -R "$OO_PS4_TOOLCHAIN/samples/_common/"* \
-            "$GITHUB_WORKSPACE/../_common/"
-
-      - name: Verify project layout
-        run: |
-          test -f "$GITHUB_WORKSPACE/Makefile"
-          test -f "$GITHUB_WORKSPACE/hello_world/main.cpp"
-          test -f "$GITHUB_WORKSPACE/sce_sys/icon0.png"
-          test -f "$GITHUB_WORKSPACE/sce_sys/about/right.sprx"
-          test -f "$GITHUB_WORKSPACE/../_common/log.h"
-
-          echo "Project layout:"
-          find "$GITHUB_WORKSPACE" -maxdepth 3 -type f \
-            ! -path "$GITHUB_WORKSPACE/.git/*" \
-            | sort
-
-      - name: Build PKG
-        working-directory: ${{ github.workspace }}
-        run: |
-          make clean PROJDIR=hello_world
-          make PROJDIR=hello_world
+          docker run --rm \
+            --user root \
+            -w /workspace \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            openorbisofficial/toolchain:latest \
+            bash -c '
+              set -e
+              cp -R /lib/OpenOrbisSDK/samples/_common /workspace/../_common
+              cd /workspace
+              make clean PROJDIR=hello_world
+              make PROJDIR=hello_world
+            '
 
       - name: Verify PKG
         run: |
-          PKG="$GITHUB_WORKSPACE/IV0000-PPOO00001_00-POOPOOTOILET0001.pkg"
-
-          if [ ! -f "$PKG" ]; then
-            echo "ERROR: No PKG was produced."
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f \
-              \( -name "*.pkg" -o -name "*.gp4" -o -name "eboot.bin" \) \
-              -print
-            exit 1
-          fi
-
-          echo "PKG successfully produced:"
-          ls -lh "$PKG"
+          test -s IV0000-PPOO00001_00-POOPOOTOILET0001.pkg
+          ls -lh IV0000-PPOO00001_00-POOPOOTOILET0001.pkg
 
       - name: Upload PKG
         uses: actions/upload-artifact@v4
