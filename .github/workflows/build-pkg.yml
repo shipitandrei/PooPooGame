@@ -111,6 +111,24 @@ jobs:
           test -f sce_sys/icon0.png || { echo "::error::Missing sce_sys/icon0.png"; exit 1; }
           ls -R sce_sys sce_module hello_world
 
+      - name: Provide samples/_common headers
+        run: |
+          # hello_world/main.cpp does #include "../../_common/log.h", which only resolves
+          # inside the toolchain's samples/ tree. Recreate that layout under /tmp/inc and
+          # point the compiler at it with -I (picked up by the Makefile via EXTRAFLAGS).
+          common=$(find "$OO_PS4_TOOLCHAIN" -type d -name _common | head -n1)
+          if [ -z "$common" ]; then
+            echo "_common not in toolchain archive, fetching from ${OO_TOOLCHAIN_VERSION} source"
+            git clone --depth 1 --branch "$OO_TOOLCHAIN_VERSION" \
+              https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain /tmp/oo-src
+            common=/tmp/oo-src/samples/_common
+          fi
+          test -f "$common/log.h" || { echo "::error::log.h not found in $common"; ls "$common"; exit 1; }
+          mkdir -p /tmp/inc/a/b
+          cp -r "$common" /tmp/inc/_common
+          ls /tmp/inc/_common
+          echo "EXTRAFLAGS=-I/tmp/inc/a/b" >> "$GITHUB_ENV"
+
       - name: Build eboot.bin and PKG
         run: |
           # The Makefile derives its source dir from the checkout folder name, but
