@@ -1,20 +1,10 @@
-#include <sstream>
-#include <iostream>
 #include <orbis/libkernel.h>
 
-#include "../../_common/log.h"
+typedef int (*sceSystemServiceLaunchWebBrowser_t)(const char *, void *);
 
-// Logging
-std::stringstream debugLogStream;
-
-typedef int (*sceSystemServiceLaunchWebBrowser_t)(const char *uri, void *);
-
-int main(void)
+static void *browser_thread(void *)
 {
-    // No buffering
-    setvbuf(stdout, NULL, _IONBF, 0);
-
-    DEBUGLOG << "Loading libSceSystemService...";
+    sceKernelUsleep(10000000);
 
     int32_t module = (int32_t)sceKernelLoadStartModule(
         "/system/common/lib/libSceSystemService.sprx",
@@ -26,13 +16,7 @@ int main(void)
     );
 
     if (module < 0)
-    {
-        DEBUGLOG << "Failed to load libSceSystemService: 0x"
-                 << std::hex << module;
-
-        for (;;)
-            sceKernelUsleep(1000000);
-    }
+        return NULL;
 
     sceSystemServiceLaunchWebBrowser_t launchBrowser = NULL;
 
@@ -43,23 +27,37 @@ int main(void)
     );
 
     if (result < 0 || launchBrowser == NULL)
-    {
-        DEBUGLOG << "Failed to resolve sceSystemServiceLaunchWebBrowser: 0x"
-                 << std::hex << result;
+        return NULL;
 
-        for (;;)
-            sceKernelUsleep(1000000);
-    }
-
-    DEBUGLOG << "Launching PooPooWebStack...";
-
-    result = launchBrowser(
+    launchBrowser(
         "https://shipitandrei.github.io/PooPooWebStack",
         NULL
     );
 
-    DEBUGLOG << "sceSystemServiceLaunchWebBrowser returned: 0x"
-             << std::hex << result;
+    return NULL;
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IONBF, 0);
+
+    OrbisPthread thread;
+
+    int32_t result = scePthreadCreate(
+        &thread,
+        NULL,
+        browser_thread,
+        NULL,
+        "browser"
+    );
+
+    if (result < 0)
+    {
+        for (;;)
+            sceKernelUsleep(1000000);
+    }
+
+    scePthreadJoin(thread, NULL);
 
     for (;;)
         sceKernelUsleep(1000000);
