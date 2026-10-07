@@ -1,8 +1,8 @@
 # Package metadata.
-TITLE       := OpenOrbis Hello World Sample
+TITLE       := Poo Poo on the Toilet
 VERSION     := 1.00
-TITLE_ID    := BREW00083
-CONTENT_ID  := IV0000-BREW00083_00-HELLOWORLD000000
+TITLE_ID    := PPOO00001
+CONTENT_ID  := IV0000-PPOO00001_00-POOPOOTOILET0001
 
 # Libraries linked into the ELF.
 LIBS        := -lc -lkernel -lc++
