@@ -21,48 +21,29 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-
-          sudo apt-get install -y \
-            ca-certificates \
-            curl \
-            wget \
-            make \
-            tar \
-            unzip \
-            xz-utils \
-            lsb-release \
-            software-properties-common
-
-      - name: Install LLVM 18
-        run: |
-          curl -fsSL https://apt.llvm.org/llvm.sh -o llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-
-          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
-
-          clang-18 --version
-          clang++-18 --version
-          ld.lld-18 --version
+          sudo apt-get install -y clang lld make curl wget tar unzip ca-certificates
 
       - name: Install libssl1.1 for PkgTool.Core
         run: |
           wget -q \
-            https://snapshot.debian.org/archive/debian/20230610T000000Z/pool/main/o/openssl/libssl1.1_1.1.1u-1%7Edeb11u1_amd64.deb \
+            https://deb.debian.org/debian/pool/main/o/openssl/libssl1.1_1.1.1w-0+deb11u1_amd64.deb \
             -O /tmp/libssl1.1.deb
 
           sudo dpkg -i /tmp/libssl1.1.deb
+          sudo ldconfig
 
-          ldconfig
+          dpkg -s libssl1.1
 
       - name: Download OpenOrbis v0.5.4
         run: |
-          curl -fL \
+          wget -q \
             https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz \
-            -o /tmp/toolchain-llvm-18.tar.gz
+            -O /tmp/toolchain-llvm-18.tar.gz
 
       - name: Extract OpenOrbis toolchain
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/OpenOrbis"
+
           tar -xzf /tmp/toolchain-llvm-18.tar.gz \
             -C "$GITHUB_WORKSPACE"
 
@@ -71,45 +52,40 @@ jobs:
           test -f "$OO_PS4_TOOLCHAIN/bin/linux/create-gp4"
           test -f "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
 
-          chmod +x "$OO_PS4_TOOLCHAIN"/bin/linux/*
+          chmod +x "$OO_PS4_TOOLCHAIN/bin/linux/"*
 
-          echo "OpenOrbis toolchain:"
-          ls -la "$OO_PS4_TOOLCHAIN"
-
-      - name: Verify build environment
+      - name: Verify OpenOrbis toolchain
         run: |
           echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN"
 
-          command -v clang
-          command -v clang++
-          command -v ld.lld
-
-          clang --version
-          clang++ --version
-          ld.lld --version
+          test -d "$OO_PS4_TOOLCHAIN/include"
+          test -d "$OO_PS4_TOOLCHAIN/lib"
+          test -d "$OO_PS4_TOOLCHAIN/bin/linux"
 
           "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core" --help || true
 
-      - name: Show project files
+      - name: Prepare Hello World sample layout
         run: |
-          echo "Project:"
-          find . -maxdepth 3 -type f \
-            ! -path './.git/*' \
-            | sort
+          mkdir -p "$GITHUB_WORKSPACE/_common"
+
+          cp -R "$OO_PS4_TOOLCHAIN/samples/_common/"* \
+            "$GITHUB_WORKSPACE/_common/"
+
+          cp Makefile hello_world/Makefile
+
+          cp -R assets hello_world/
+          cp -R sce_module hello_world/
+          cp -R sce_sys hello_world/
 
       - name: Build PKG
+        working-directory: hello_world
         run: |
           make clean || true
           make
 
       - name: Verify PKG
         run: |
-          echo "Generated files:"
-          find . -maxdepth 3 -type f \
-            \( -name "*.pkg" -o -name "*.gp4" -o -name "eboot.bin" \) \
-            -print
-
-          PKG="$(find . -maxdepth 1 -type f -name '*.pkg' -print -quit)"
+          PKG="$(find "$GITHUB_WORKSPACE/hello_world" -maxdepth 1 -type f -name '*.pkg' -print -quit)"
 
           if [ -z "$PKG" ]; then
             echo "ERROR: No PKG was produced."
@@ -123,5 +99,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PooPooGame-PS4-PKG
-          path: "*.pkg"
+          path: hello_world/*.pkg
           if-no-files-found: error
