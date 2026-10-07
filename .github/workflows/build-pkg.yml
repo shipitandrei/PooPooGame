@@ -8,47 +8,76 @@ on:
   workflow_dispatch:
 
 env:
-  # Toolchain release tag from https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases
+  # Release tag from https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases
   OO_TOOLCHAIN_VERSION: v0.5.4
-  OO_PS4_TOOLCHAIN: /lib/OpenOrbisSDK
+  # Avoids needing ICU for the .NET-based PkgTool.Core
+  DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    # The toolchain's PkgTool.Core needs libssl1.1 + libicu66, which only exist on
-    # Ubuntu 20.04. This mirrors the official OpenOrbis Dockerfile.
-    container:
-      image: ubuntu:20.04
-    env:
-      DEBIAN_FRONTEND: noninteractive
-    defaults:
-      run:
-        shell: bash
+    # OpenOrbis's own CI builds and packages samples on ubuntu-22.04
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Install build dependencies
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            build-essential git ca-certificates curl tar gzip \
-            clang-12 lld-12 llvm-12 libicu66 libssl1.1
-          # The Makefile calls unversioned clang / clang++ / ld.lld
-          ln -sf /usr/bin/clang-12   /usr/local/bin/clang
-          ln -sf /usr/bin/clang++-12 /usr/local/bin/clang++
-          ln -sf /usr/bin/ld.lld-12  /usr/local/bin/ld.lld
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download OpenOrbis toolchain
+      - name: Install build dependencies
         run: |
-          mkdir -p "$OO_PS4_TOOLCHAIN"
-          curl -fsSL "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/${OO_TOOLCHAIN_VERSION}/${OO_TOOLCHAIN_VERSION}.tar.gz" \
-            | tar -xz -C "$OO_PS4_TOOLCHAIN" bin/data bin/linux include lib scripts LICENSE link.x
-          echo "$OO_PS4_TOOLCHAIN/bin/linux" >> "$GITHUB_PATH"
-          test -x "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core"
-          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-gp4"
-          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-14 lld-14 llvm-14 jq unzip curl make
+          # The Makefile calls unversioned clang / clang++ / ld.lld
+          sudo ln -sf /usr/bin/clang-14   /usr/local/bin/clang
+          sudo ln -sf /usr/bin/clang++-14 /usr/local/bin/clang++
+          sudo ln -sf /usr/bin/ld.lld-14  /usr/local/bin/ld.lld
+
+      - name: Download OpenOrbis toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Look up the real asset name via the GitHub API instead of guessing it.
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/tags/${OO_TOOLCHAIN_VERSION}" \
+            -o release.json
+
+          echo "Assets in ${OO_TOOLCHAIN_VERSION}:"
+          jq -r '.assets[].name' release.json
+
+          # Prefer the LLVM 14 build if several exist, otherwise take the first toolchain archive.
+          url=$(jq -r '[.assets[] | select(.name | test("toolchain.*\\.(tar\\.gz|zip)$"))]
+                       | (map(select(.name | test("llvm-14"))) + .)
+                       | .[0].browser_download_url // empty' release.json)
+          if [ -z "$url" ]; then
+            echo "::error::No toolchain archive found in release ${OO_TOOLCHAIN_VERSION}"
+            exit 1
+          fi
+          echo "Using $url"
+
+          mkdir -p /tmp/oo && cd /tmp/oo
+          curl -fsSL "$url" -o asset
+          case "$url" in
+            *.zip)
+              unzip -q asset
+              inner=$(find . -name '*.tar.gz' | head -n1)
+              if [ -n "$inner" ]; then tar -xzf "$inner"; fi
+              ;;
+            *)
+              tar -xzf asset
+              ;;
+          esac
+
+          link=$(find /tmp/oo -name link.x | head -n1)
+          if [ -z "$link" ]; then echo "::error::link.x not found, unexpected archive layout"; find /tmp/oo -maxdepth 3; exit 1; fi
+          root=$(dirname "$link")
+          chmod -R +x "$root/bin/linux"
+          echo "OO_PS4_TOOLCHAIN=$root" >> "$GITHUB_ENV"
+          echo "$root/bin/linux" >> "$GITHUB_PATH"
+          ls "$root" "$root/bin/linux"
+          test -x "$root/bin/linux/PkgTool.Core"
+          test -x "$root/bin/linux/create-gp4"
+          test -x "$root/bin/linux/create-fself"
 
       - name: Check required project files
         run: |
