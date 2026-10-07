@@ -54,41 +54,41 @@ jobs:
 
           chmod +x "$OO_PS4_TOOLCHAIN/bin/linux/"*
 
-      - name: Verify OpenOrbis toolchain
+      - name: Prepare OpenOrbis common files
         run: |
-          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN"
-
-          test -d "$OO_PS4_TOOLCHAIN/include"
-          test -d "$OO_PS4_TOOLCHAIN/lib"
-          test -d "$OO_PS4_TOOLCHAIN/bin/linux"
-
-          "$OO_PS4_TOOLCHAIN/bin/linux/PkgTool.Core" --help || true
-
-      - name: Prepare Hello World sample layout
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/_common"
+          mkdir -p "$GITHUB_WORKSPACE/../_common"
 
           cp -R "$OO_PS4_TOOLCHAIN/samples/_common/"* \
-            "$GITHUB_WORKSPACE/_common/"
+            "$GITHUB_WORKSPACE/../_common/"
 
-          cp Makefile hello_world/Makefile
+      - name: Verify project layout
+        run: |
+          test -f "$GITHUB_WORKSPACE/Makefile"
+          test -f "$GITHUB_WORKSPACE/hello_world/main.cpp"
+          test -f "$GITHUB_WORKSPACE/sce_sys/icon0.png"
+          test -f "$GITHUB_WORKSPACE/sce_sys/about/right.sprx"
+          test -f "$GITHUB_WORKSPACE/../_common/log.h"
 
-          cp -R assets hello_world/
-          cp -R sce_module hello_world/
-          cp -R sce_sys hello_world/
+          echo "Project layout:"
+          find "$GITHUB_WORKSPACE" -maxdepth 3 -type f \
+            ! -path "$GITHUB_WORKSPACE/.git/*" \
+            | sort
 
       - name: Build PKG
-        working-directory: hello_world
+        working-directory: ${{ github.workspace }}
         run: |
-          make clean || true
-          make
+          make clean PROJDIR=hello_world
+          make PROJDIR=hello_world
 
       - name: Verify PKG
         run: |
-          PKG="$(find "$GITHUB_WORKSPACE/hello_world" -maxdepth 1 -type f -name '*.pkg' -print -quit)"
+          PKG="$GITHUB_WORKSPACE/IV0000-PPOO00001_00-POOPOOTOILET0001.pkg"
 
-          if [ -z "$PKG" ]; then
+          if [ ! -f "$PKG" ]; then
             echo "ERROR: No PKG was produced."
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f \
+              \( -name "*.pkg" -o -name "*.gp4" -o -name "eboot.bin" \) \
+              -print
             exit 1
           fi
 
@@ -99,5 +99,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PooPooGame-PS4-PKG
-          path: hello_world/*.pkg
+          path: IV0000-PPOO00001_00-POOPOOTOILET0001.pkg
           if-no-files-found: error
