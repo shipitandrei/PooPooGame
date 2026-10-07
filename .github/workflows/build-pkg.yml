@@ -79,14 +79,37 @@ jobs:
           test -x "$root/bin/linux/create-gp4"
           test -x "$root/bin/linux/create-fself"
 
-      - name: Check required project files
+      - name: Add package files missing from the repo
         run: |
-          missing=0
-          for f in Makefile hello_world sce_sys/icon0.png sce_sys/about/right.sprx sce_module; do
-            if [ ! -e "$f" ]; then echo "::error::Missing $f"; missing=1; fi
+          # The repo only ships sce_sys/icon0.png. The toolchain provides the rest
+          # (right.sprx for sce_sys/about, libc.prx + libSceFios2.prx for sce_module).
+          mkdir -p sce_sys/about sce_module
+
+          if [ ! -e sce_sys/about/right.sprx ]; then
+            src=$(find "$OO_PS4_TOOLCHAIN" \( -name right.sprx -o -name right.prx \) | head -n1)
+            if [ -z "$src" ]; then
+              echo "::error::right.sprx not found in toolchain"
+              find "$OO_PS4_TOOLCHAIN" -maxdepth 3 -not -path '*/include/*' | head -n 80
+              exit 1
+            fi
+            echo "right.sprx <- $src"
+            cp "$src" sce_sys/about/right.sprx
+          fi
+
+          for m in libc.prx libSceFios2.prx; do
+            if [ ! -e "sce_module/$m" ]; then
+              src=$(find "$OO_PS4_TOOLCHAIN" -name "$m" | head -n1)
+              if [ -n "$src" ]; then
+                echo "$m <- $src"
+                cp "$src" "sce_module/$m"
+              else
+                echo "::warning::$m not found in toolchain, building without it"
+              fi
+            fi
           done
-          ls -R sce_sys sce_module hello_world || true
-          exit $missing
+
+          test -f sce_sys/icon0.png || { echo "::error::Missing sce_sys/icon0.png"; exit 1; }
+          ls -R sce_sys sce_module hello_world
 
       - name: Build eboot.bin and PKG
         run: |
