@@ -2,41 +2,27 @@ name: Build Poo Poo PS4 PKG
 
 on:
   push:
-    branches: [main]
+    branches: [ main, master ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Poo Poo PS4 PKG
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build PKG with OpenOrbis
-        run: |
-          docker run --rm \
-            --user root \
-            -w /workspace \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            openorbisofficial/toolchain:latest \
-            bash -c '
-              set -e
-              cp -R /lib/OpenOrbisSDK/samples/_common /workspace/../_common
-              cd /workspace
-              make clean PROJDIR=hello_world
-              make PROJDIR=hello_world
-            '
+      - name: Setup OpenOrbis PS4 Toolchain
+        uses: OpenOrbis/ps4-toolchain@v1
 
-      - name: Verify PKG
-        run: |
-          test -s IV0000-PPOO00001_00-POOPOOTOILET0001.pkg
-          ls -lh IV0000-PPOO00001_00-POOPOOTOILET0001.pkg
+      - name: Build package
+        run: make pkg
 
       - name: Upload PKG
         uses: actions/upload-artifact@v4
         with:
-          name: PooPooGame-PS4-PKG
-          path: IV0000-PPOO00001_00-POOPOOTOILET0001.pkg
+          name: poopoogame-pkg
+          path: "**/*.pkg"
           if-no-files-found: error
