@@ -1,28 +1,23 @@
 name: Build Poo Poo PS4 PKG
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v2
 
-      - name: Setup OpenOrbis PS4 Toolchain
-        uses: OpenOrbis/ps4-toolchain@v1
-
-      - name: Build package
-        run: make pkg
-
-      - name: Upload PKG
-        uses: actions/upload-artifact@v4
+      - name: Run Open Orbis Toolchain
+        uses: OpenOrbis/toolchain-action@main
         with:
-          name: poopoogame-pkg
-          path: "**/*.pkg"
-          if-no-files-found: error
+          version: latest
+          command: cd hello_world; make; PkgTool.Core pkg_build pkg/pkg.gp4 .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: IV0000-BREW00083_00-HELLOWORLD000000.pkg
+          path: hello_world/IV0000-BREW00083_00-HELLOWORLD000000.pkg
